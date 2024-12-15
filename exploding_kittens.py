@@ -22,8 +22,8 @@ default_counts = [0,       4,    1,      4,      4,      4,      4,      4,     
 
 cards = ['UNKNOWN', 'DEFUSE', 'EK', 'BCAT', 'WCAT', 'HCAT', 'RCAT', 'TCAT', 'ATTACK', 'FAVOR', 'NOPE', 'FUTURE', 'SHUFFLE', 'SKIP']
 
-counts = [       0,        4,    1,      0,      0,      0,      0,      0,        2,      4,       0,        5,         4,      4]
-start_hand_size = 5
+counts = [       0,        4,    1,      4,      4,      4,      4,      4,        2,      4,       0,        5,         4,      4]
+start_hand_size = 8
 
 FULL_DECK = lambda: deepcopy(counts)
 
@@ -48,6 +48,7 @@ class State:
         self.turns = 1 # for attack cards
         self.attack = False
         self.future = False
+        self.cat_card = False
 
         self.ek_pos = -1
         self.active_played = []
@@ -185,18 +186,20 @@ class State:
         if player == 'MAX':
             self.max_hand[card] -= count
             if self.known_max[card] == 0:
-                self.known_max[UNKNOWN] -= 1
+                self.known_max[UNKNOWN] -= count
             else:
                 self.known_max[card] -= count
         else:
             self.min_hand[card] -= count
             if self.known_min[card] == 0:
-                self.known_min[UNKNOWN] -= 1
+                self.known_min[UNKNOWN] -= count
             else:
                 self.known_min[card] -= count
 
-    def opposite_player(self):
-        if self.to_move == 'MAX':
+    def opposite_player(self, player=None):
+        if player == None:
+            player = self.to_move
+        if player == 'MAX':
             return 'MIN'
         return 'MAX'
 
@@ -296,6 +299,14 @@ def probablity(state, actions):
                 ps[i] *= K/N
 
                 pool[c] -= 1
+
+        if a.startswith('CAT_'):
+            c = cards.index(a.split('_', 1)[1])
+            hand = state.get_current_hand(player=state.opposite_player(player=state.drawing))
+            if hand[c] > 0:
+                ps[i] = 1
+            else:
+                ps[i] = state.pool[c] / sum(state.pool)
         
         if a in cards:
 
@@ -337,43 +348,53 @@ def actions(state):
             adjusted_pool[card] -= 1
 
     # Chance node - return all drawable cards
-    if state.to_move == 'CHANCE' and not state.future:
-        card = state.get_deck()[-1]
+    if state.to_move == 'CHANCE':
+        if state.future:
+            top = state.get_deck()[-3:][::-1]
+            known = sum([1 for c in top if c != UNKNOWN])
+            remaining = min(3 - known, len(state.deck))
 
-        if card != UNKNOWN:
-            return [f'DRAW_{cards[card]}']
+            if remaining == 0:
+                return [f"FUTURE_{'_'.join([cards[c] for c in top])}"]
+            
+            pool = [i for i, c in enumerate(state.pool) if c > 0]
+            perms = permutations(list(set(pool)), r=remaining)
+            actions = []
+            
+            for perm in perms:
+                i = 0
+                cs = []
+                for c in top:
+                    if c == UNKNOWN:
+                        cs.append(perm[i])
+                        i += 1
+                    else:
+                        cs.append(c)
+                actions.append(f"FUTURE_{'_'.join([cards[c] for c in cs])}")
+            # print(len(actions))
+            return actions
 
-        if sum(state.pool) == state.max_hand[UNKNOWN] + state.min_hand[UNKNOWN] + 1:
-            # Only the EK remains in the actual deck
-            return ['DRAW_EK']
+        elif state.cat_card:
+            hand = state.get_current_hand(player=state.opposite_player(player=state.drawing))
+            candidates = State.add_cards(hand, adjusted_pool)
+            candidates[UNKNOWN] = 0
+            return [f"CAT_{cards[i]}" for i, c in enumerate(candidates) if c > 0]
 
-        
-        return [f'DRAW_{cards[card]}' for card, count in enumerate(adjusted_pool) if count > 0]
+        else:
+            card = state.get_deck()[-1]
+
+            if card != UNKNOWN:
+                return [f'DRAW_{cards[card]}']
+
+            if sum(state.pool) == state.max_hand[UNKNOWN] + state.min_hand[UNKNOWN] + 1:
+                # Only the EK remains in the actual deck
+                return ['DRAW_EK']
+
+            
+            return [f'DRAW_{cards[card]}' for card, count in enumerate(adjusted_pool) if count > 0]
     
-    elif state.to_move == 'CHANCE' and state.future:
-        top = state.get_deck()[-3:][::-1]
-        known = sum([1 for c in top if c != UNKNOWN])
-        remaining = min(3 - known, len(state.deck))
-
-        if remaining == 0:
-            return [f"FUTURE_{'_'.join([cards[c] for c in top])}"]
+    # elif state.to_move == 'CHANCE' and state.future:
         
-        pool = [i for i, c in enumerate(state.pool) if c > 0]
-        perms = permutations(list(set(pool)), r=remaining)
-        actions = []
-        
-        for perm in perms:
-            i = 0
-            cs = []
-            for c in top:
-                if c == UNKNOWN:
-                    cs.append(perm[i])
-                    i += 1
-                else:
-                    cs.append(c)
-            actions.append(f"FUTURE_{'_'.join([cards[c] for c in cs])}")
-        # print(len(actions))
-        return actions
 
     hand = deepcopy(state.get_current_hand())
     
@@ -417,10 +438,10 @@ def actions(state):
         if card <= DEFUSE:
             # Defuse or EK - ignore
             continue
-        # elif card <= TCAT:
-        #     # Cat cards - need 2
-        #     if count >= 2:
-        #         actions.append(cards[card])
+        elif card <= TCAT:
+            # Cat cards - need 2
+            if count >= 2 and sum(state.get_current_hand(player=state.opposite_player())) > 0:
+                actions.append(cards[card])
         # elif card == NOPE:
         #     # Nope card - can only play if there was a previous 'action' card
         #     if count >= 1 and state.active_played:
@@ -554,9 +575,27 @@ def result(state, action):
                 # result_state.min_known_deck[-(i + 1)] = fc
 
         return result_state
+    
+    elif action.startswith('CAT_'):
+        card = cards.index(action.split('_', 1)[1])
+        result_state.to_move = state.drawing
+        result_state.drawing = False
+        result_state.cat_card = False
+
+        result_state.add_to_hand(card)
+        result_state.remove_from_hand(card, player=state.opposite_player())
+
+        return result_state
 
 
     card = cards.index(action)
+
+    if action in ['BCAT', 'WCAT', 'HCAT', 'RCAT', 'TCAT']:
+        result_state.remove_from_hand(card, count=2)
+        result_state.cat_card = True
+        result_state.to_move = 'CHANCE'
+        result_state.drawing = state.to_move
+        return result_state
 
     
 
@@ -614,6 +653,8 @@ def result(state, action):
         result_state.to_move = 'CHANCE'
         result_state.future = True
 
+
+    
 
 
     # elif action == 'FUTURE':
@@ -786,6 +827,10 @@ def main():
         else:
             if game_state.future:
                 action = f"FUTURE_{'_'.join([cards[c] for c in game_state.deck[-3:][::-1]])}"
+            elif game_state.cat_card:
+                ac = actions(game_state)
+                probabilities = probablity(game_state, ac)
+                action = random.choices(ac, weights=probabilities)[0]
             else:
                 # CHANCE - draw card
                 # draw_actions = actions(game_state)
