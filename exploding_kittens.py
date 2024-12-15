@@ -21,7 +21,7 @@ default_counts = [0,       4,    1,      4,      4,      4,      4,      4,     
 
 cards = ['UNKNOWN', 'DEFUSE', 'EK', 'BCAT', 'WCAT', 'HCAT', 'RCAT', 'TCAT', 'ATTACK', 'FAVOR', 'NOPE', 'FUTURE', 'SHUFFLE', 'SKIP']
 
-counts = [       0,        4,    1,      0,      0,      0,      0,      0,        2,      0,       0,        0,         0,      4]
+counts = [       0,        4,    1,      0,      0,      0,      0,      0,        2,      0,       0,        0,         4,      4]
 start_hand_size = 3
 
 FULL_DECK = lambda: deepcopy(counts)
@@ -55,6 +55,8 @@ class State:
         self.drawing = None
         self.played = []
 
+        self.perspective = 'TRUTH'
+
     # Min should perceive themselves as Max
     def percept(self):
         state = deepcopy(self)
@@ -64,6 +66,8 @@ class State:
             add_to_pool[UNKNOWN] = 0
             state.pool = State.add_cards(state.pool, add_to_pool)
             state.min_hand = deepcopy(self.known_min)
+
+            state.perspective = 'MAX'
             
             # state.min_known_ek = -1
             # state.min_known_top = []
@@ -73,6 +77,8 @@ class State:
             add_to_pool[UNKNOWN] = 0
             state.pool = State.add_cards(state.pool, add_to_pool)
             state.max_hand = deepcopy(self.known_max)
+
+            state.perspective = 'MIN'
 
             # state.max_known_ek = -1
             # state.max_known_top = []
@@ -526,6 +532,15 @@ def result(state, action):
             result_state.attack = False
             result_state.turns -= 1
 
+    elif action == 'SHUFFLE':
+        if state.perspective == 'TRUTH':
+            random.shuffle(result_state.deck)
+        else:
+            result_state.deck = [UNKNOWN] * len(state.deck)
+
+        result_state.max_known_deck = []
+        result_state.min_known_deck = []
+
     # elif action == 'FUTURE':
     #     pass # make it chance's turn? then need to distinguish between drawing and seeing the future
 
@@ -673,7 +688,7 @@ def choose_move(s):
         v = math.inf
 
     for action in actions(s):
-        val = expectimax(result(s, action), 8)
+        val = expectimax(result(s, action), 5)
         print(f"{action}: {val}")
         if (s.to_move == 'MAX' and val > v) or (s.to_move == 'MIN' and val < v):
             a, v = action, val
