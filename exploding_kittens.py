@@ -21,8 +21,8 @@ default_counts = [0,       4,    1,      4,      4,      4,      4,      4,     
 
 cards = ['UNKNOWN', 'DEFUSE', 'EK', 'BCAT', 'WCAT', 'HCAT', 'RCAT', 'TCAT', 'ATTACK', 'FAVOR', 'NOPE', 'FUTURE', 'SHUFFLE', 'SKIP']
 
-counts = [       0,        4,    1,      0,      0,      0,      0,      0,        2,      0,       0,        0,         4,      4]
-start_hand_size = 3
+counts = [       0,        4,    1,      0,      0,      0,      0,      0,        2,      4,       0,        0,         4,      4]
+start_hand_size = 5
 
 FULL_DECK = lambda: deepcopy(counts)
 
@@ -286,8 +286,11 @@ def probablity(state, actions):
     p_defuse = -1
 
     for i, a in enumerate(actions):
-        if a.startswith('DEFUSE'):
+        if a.startswith('DEFUSE_'):
             a = a.split('_', 1)[0]
+
+        if a.startswith('FAVOR_'):
+            a = a.split('_', 1)[1]
 
         if a.startswith('DRAW_'):
             card = cards.index(a.split('_', 1)[1])
@@ -358,8 +361,14 @@ def actions(state):
     for card, count in enumerate(adjusted_pool):
         if card != EK:
             hand[card] += min(count, hand[UNKNOWN])
+    hand[UNKNOWN] = 0
 
-    
+    actions = []
+    if state.favor:
+        for card, count in enumerate(hand):
+            if count > 0:
+                actions.append(f"FAVOR_{cards[card]}")
+        return actions
 
     # Player just used Defuse - put the EK back into deck
     # if state.replace_ek:
@@ -458,7 +467,7 @@ def result(state, action):
 
         return result_state
 
-    if action.startswith('DEFUSE_'):
+    elif action.startswith('DEFUSE_'):
         # print('DEFUSE')
         pos = int(action.split('_', 1)[1])
         # print(pos)
@@ -490,7 +499,18 @@ def result(state, action):
         result_state.to_move = state.opposite_player()
 
         return result_state
+
+    elif action.startswith('FAVOR_'):
+        card = cards.index(action.split('_', 1)[1])
         
+        result_state.remove_from_hand(card)
+        result_state.add_to_hand(card, player=state.opposite_player(), known=True)
+        
+        result_state.favor = False
+
+        result_state.to_move = state.opposite_player()
+
+        return result_state
 
     card = cards.index(action)
 
@@ -540,6 +560,11 @@ def result(state, action):
 
         result_state.max_known_deck = []
         result_state.min_known_deck = []
+
+    elif action == 'FAVOR':
+        result_state.to_move = state.opposite_player()
+        result_state.favor = True
+
 
     # elif action == 'FUTURE':
     #     pass # make it chance's turn? then need to distinguish between drawing and seeing the future
