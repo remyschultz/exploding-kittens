@@ -1,5 +1,4 @@
-import random, math
-from enum import Enum
+import random, math, time
 from copy import deepcopy
 from itertools import permutations
 
@@ -44,7 +43,7 @@ class State:
         self.replace_ek = False
 
         self.to_move = player
-        self.played = []
+        self.action_history = []
 
         self.perspective = 'TRUTH'
 
@@ -200,7 +199,7 @@ class State:
 
         print(f"Deck size: {len(self.deck)}")
 
-        print(f"Played: {self.played}")
+        print(f"action_history: {self.action_history}")
 
         print('---------------------\n')
         
@@ -313,6 +312,11 @@ def actions(state):
                         cs.append(c)
                 actions.append(f"FUTURE_{'_'.join([cards[c] for c in cs])}")
 
+            # if known == 1:
+            #     print(actions)
+            #     print(top)
+            #     print(state.deck)
+            #     input()
             return actions
 
         elif state.cat_card:
@@ -380,6 +384,9 @@ def actions(state):
         elif card == FAVOR:
             if count >= 1 and sum(state.get_current_hand(player=state.opposite_player())) > 0:
                 actions.append('FAVOR')
+        elif card == FUTURE:
+            if count >= 1 and len(state.deck) > 1:
+                actions.append('FUTURE')
         else:
             # All other cards
             if count >= 1:
@@ -393,7 +400,7 @@ def result(state, action):
     
     result_state = deepcopy(state)
 
-    result_state.played = [f"{state.to_move}: {action}"] + state.played
+    result_state.action_history = [f"{state.to_move}: {action}"] + state.action_history
 
     if action == 'DRAW':
         result_state.drawing = state.to_move
@@ -589,18 +596,25 @@ def state_eval(state):
 
     return score
 
-def expectimax(state, depth):
-    if depth == 0:
-        return state_eval(state)
+def expectimax(state, depth, cutoff_time, eval_fn):
+    if depth == 0 or time.time() > cutoff_time:
+        return eval_fn(state)
+    if time.time() > cutoff_time:
+        return eval_fn(state)
     if is_terminal(state):
         return utility(state)
 
     ac = actions(state)
-    scores = [expectimax(result(state, a), depth - 1) for a in ac]
+    scores = [expectimax(result(state, a), depth - 1, cutoff_time, eval_fn) for a in ac]
+    pr = probablity(state, ac)
+
+    if len(scores) == 0:
+        # state.print()
+        # input()
+        return eval_fn(state)
 
     if state.to_move == 'MAX':
         # In this case, probability means the chance that Min is *able* to take an action
-        pr = probablity(state, ac)
         index_max = max(range(len(scores)), key=scores.__getitem__)
 
         # If the best move for Min has a probability of 100%, Min will always choose it
@@ -620,11 +634,8 @@ def expectimax(state, depth):
         total_p = sum(pr)
         return sum(p / total_p * s for p, s in zip(pr, scores))
 
-        # return max(expectimax(result(state, a), depth - 1) for a in actions(state))
-
     if state.to_move == 'MIN':
         # In this case, probability means the chance that Min is *able* to take an action
-        pr = probablity(state, ac)
         index_min = min(range(len(scores)), key=scores.__getitem__)
 
         # If the best move for Min has a probability of 100%, Min will always choose it
@@ -646,12 +657,16 @@ def expectimax(state, depth):
 
 
     if state.to_move == 'CHANCE':
-        ac = actions(state)
-        pr = probablity(state, ac)
-        return sum(p * expectimax(result(state, a), depth - 1) for a, p in zip(ac, pr))
+        # return sum(p * expectimax(result(state, a), depth - 1, cutoff_time, eval_fn) for a, p in zip(ac, pr))
+        return sum(p * s for s, p in zip(scores, pr))
 
-def choose_move(s):
+
+def choose_move(s, eval_fn, depth=1, time_limit=None, print_info=False):
     a = None
+
+    cutoff_time = math.inf
+    if time_limit:
+        cutoff_time = time.time() + time_limit
 
     if s.to_move == 'MAX':
         v = -math.inf
@@ -659,25 +674,58 @@ def choose_move(s):
         v = math.inf
 
     for action in actions(s):
-        val = expectimax(result(s, action), 2)
-        print(f"{action}: {val}")
+        val = expectimax(result(s, action), depth, cutoff_time, eval_fn)
+        if print_info:
+            print(f"{action}: {val}")
         if (s.to_move == 'MAX' and val > v) or (s.to_move == 'MIN' and val < v):
             a, v = action, val
 
     return a
 
+def agent_random(state):
+    return random.choice(actions(state.percept()))
 
-def main():
+def agent_depth1(state):
+    return choose_move(state.percept(), eval_fn=state_eval, depth=1, time_limit=None, print_info=False)
+
+def agent_depth2(state):
+    return choose_move(state.percept(), eval_fn=state_eval, depth=2, time_limit=None, print_info=False)
+
+def agent_depth3(state):
+    return choose_move(state.percept(), eval_fn=state_eval, depth=3, time_limit=None, print_info=False)
+
+def agent_3seconds(state):
+    return choose_move(state.percept(), eval_fn=state_eval, depth=100, time_limit=3, print_info=False)
+
+def agent_1second(state):
+    return choose_move(state.percept(), eval_fn=state_eval, depth=100, time_limit=1, print_info=False)
+
+
+def play_game(agent1, agent2, print_info=False):
     game_state = State(player='MAX')
+    
+    if print_info:
+        game_state.print()
 
-    game_state.print()
-    print(state_eval(game_state))
+    start_time = time.time()
+    p1_move_times = []
+    p2_move_times = []
 
     while not is_terminal(game_state):
-        print(f"{game_state.to_move}'s turn")
+        if print_info:
+            print(f"{game_state.to_move}'s turn")
 
-        if game_state.to_move in ['MAX', 'MIN']:
-            action = choose_move(game_state.percept())
+        if game_state.to_move == 'MAX':
+            t0 = time.time()
+            action = agent1(game_state)
+            # action = choose_move(game_state.percept(), eval_fn=eval_fn1, depth=depth1, print_info=print_info)
+            p1_move_times.append(time.time() - t0)
+
+        elif game_state.to_move == 'MIN':
+            t0 = time.time()
+            action = agent2(game_state)
+            # action = choose_move(game_state.percept(), eval_fn=eval_fn2, depth=depth2, print_info=print_info)
+            p2_move_times.append(time.time() - t0)
 
         else:
             if game_state.future:
@@ -692,17 +740,40 @@ def main():
                 # CHANCE - draw card
                 action = f"DRAW_{cards[game_state.deck[-1]]}"
 
-        print(f"Chose action {action}")
+        if print_info:
+            print(f"Chose action {action}")
 
         game_state = result(game_state, action)
 
-        game_state.print()
+        if print_info:
+            game_state.print()
 
-    game_state.print()
-    if utility(game_state) > 0:
-        print('MAX wins')
-    else:
-        print('MIN wins')
+    stats = {
+        'winner': 'P1' if utility(game_state) > 0 else 'P2',
+        'total_time': time.time() - start_time,
+        'p1_time': p1_move_times,
+        'p2_time': p2_move_times,
+        'total_actions': len(game_state.action_history),
+        'player_actions': len(p1_move_times + p2_move_times),
+        'remaining_cards': len(game_state.deck),
+        # 'actions': game_state.action_history,
+        'end_state': game_state
+    }
+
+    if print_info:
+        game_state.print()
+        if utility(game_state) > 0:
+            print('MAX wins')
+        else:
+            print('MIN wins')
+
+    return stats
+
+
+def main():
+    while True:
+        result = play_game(agent_depth1, agent_1second)
+        print(result)
 
 
 if __name__ == '__main__':
