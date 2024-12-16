@@ -18,10 +18,9 @@ FUTURE = 11
 SHUFFLE = 12
 SKIP = 13
 
-default_counts = [0,       4,    1,      4,      4,      4,      4,      4,        2,      4,       5,        5,         4,      4]
 
 cards = ['UNKNOWN', 'DEFUSE', 'EK', 'BCAT', 'WCAT', 'HCAT', 'RCAT', 'TCAT', 'ATTACK', 'FAVOR', 'NOPE', 'FUTURE', 'SHUFFLE', 'SKIP']
-
+# default_counts = [0,       4,    1,      4,      4,      4,      4,      4,        2,      4,       5,        5,         4,      4]
 counts = [       0,        4,    1,      4,      4,      4,      4,      4,        2,      4,       0,        5,         4,      4]
 start_hand_size = 8
 
@@ -29,14 +28,6 @@ FULL_DECK = lambda: deepcopy(counts)
 
 class State:
     def __init__(self, starting_hand=None, player='MAX'):
-        # self.pool = FULL_DECK()
-        # self.max_hand = self.deal_hand()
-        # self.min_hand = self.deal_hand()
-
-        # self.deck = []
-        # for card, count in enumerate(self.pool):
-        #     self.deck += [card] * count
-        # random.shuffle(self.deck)
         self.deal_cards()
 
         self.known_max = [start_hand_size - 1, 1] + ([0] * 12)
@@ -45,17 +36,14 @@ class State:
         self.max_known_deck = []
         self.min_known_deck = []
 
-        self.turns = 1 # for attack cards
         self.attack = False
         self.future = False
         self.cat_card = False
-
-        self.ek_pos = -1
-        self.active_played = []
-        self.to_move = player
-        self.replace_ek = False
         self.favor = False # for cat cards
         self.drawing = None
+        self.replace_ek = False
+
+        self.to_move = player
         self.played = []
 
         self.perspective = 'TRUTH'
@@ -72,8 +60,6 @@ class State:
 
             state.perspective = 'MAX'
             
-            # state.min_known_ek = -1
-            # state.min_known_top = []
         else:
             state.deck = [UNKNOWN if i not in self.min_known_deck else self.deck[i] for i in range(len(self.deck))]
             add_to_pool = State.subtract_cards(state.max_hand, state.known_max)
@@ -83,20 +69,7 @@ class State:
 
             state.perspective = 'MIN'
 
-            # state.max_known_ek = -1
-            # state.max_known_top = []
         return state
-
-    # def get_top_card(self):
-    #     if self.to_move == 'MAX':
-    #         if len(state.max_known_top) > 0:
-    #             return state.max_known_top[0]
-
-    #     elif self.to_move == 'MIN':
-    #         if len(state.min_known_top) > 0:
-    #             return state.min_known_top[0]
-
-    #     return UNKNOWN
 
     def get_deck(self, player=None):
         if player == None:
@@ -120,7 +93,6 @@ class State:
             self.deck += [card] * count
         random.shuffle(self.deck)
 
-        # print(self.deck)
         self.max_hand = [0] * len(counts)
         self.min_hand = [0] * len(counts)
 
@@ -132,18 +104,10 @@ class State:
             self.min_hand[card] += 1
         self.min_hand[DEFUSE] = 1
 
-        # print(self.max_hand)
-        # print(self.min_hand)
-
-
         self.deck = self.deck[2 * start_hand_size - 2 :] + [EK] * counts[EK] + [DEFUSE] * (counts[DEFUSE] - 2)
         random.shuffle(self.deck)
 
-        # print(self.deck)
-
         self.pool = State.subtract_cards(FULL_DECK(), self.max_hand, self.min_hand)
-
-        # print(self.pool)
 
     def deal_hand(self):
         hand = [0] * 14
@@ -203,9 +167,6 @@ class State:
             return 'MIN'
         return 'MAX'
 
-    # def deck_size(self):
-    #     return sum(self.pool) - self.max_hand[UNKNOWN] - self.min_hand[UNKNOWN]
-
     def print(self):
         print('--------STATE--------')
         print(f"{self.to_move}'s turn")
@@ -236,13 +197,10 @@ class State:
         
         print("Deck:")
         print([cards[c] for c in self.deck])
-        # for card in self.deck:
-        #     print(f"\t{cards[card]}: {self.pool[cards.index(card)]}")
 
         print(f"Deck size: {len(self.deck)}")
 
         print(f"Played: {self.played}")
-
 
         print('---------------------\n')
         
@@ -261,8 +219,6 @@ class State:
                 r[i] += bb[i]
         return r
 
-
-
 # returns a list of probabilities for each action
 def probablity(state, actions):
     ps = [0] * len(actions)
@@ -270,11 +226,10 @@ def probablity(state, actions):
     if len(actions) == 1:
         return [1]
 
-    p_defuse = -1
-
     for i, a in enumerate(actions):
         if a.startswith('DEFUSE_'):
-            a = a.split('_', 1)[0]
+            ps[i] = 1
+            continue
 
         if a.startswith('FAVOR_'):
             a = a.split('_', 1)[1]
@@ -309,19 +264,12 @@ def probablity(state, actions):
                 ps[i] = state.pool[c] / sum(state.pool)
         
         if a in cards:
-
-            # don't need to recompute
-            if a == 'DEFUSE' and p_defuse != -1:
-                ps[i] = p_defuse
-                continue
-
             if state.get_current_hand()[cards.index(a)] > 0:
                 # Player definitely has the card
                 ps[i] = 1
             else:
                 # Calculate likelyhood of player having the card
                 # Use cumulative hypergeometric distribution
-
                 K = state.pool[cards.index(a)]                  # number of desired type
                 N = sum(state.pool)                             # population size
                 n = min(N, state.get_current_hand()[UNKNOWN])   # number of draws
@@ -330,18 +278,11 @@ def probablity(state, actions):
                 for k in range(needed_successes, min(N, n) + 1):
                     ps[i] += math.comb(K, k) * math.comb(N - K, n - k) / math.comb(N, n)
 
-            if a == 'DEFUSE':
-                p_defuse = ps[i]
-
-
     return ps
 
 
 
 def actions(state):
-    # if state.get_current_hand()[UNKNOWN] < 0:
-    #     state.print()
-    #     input()
     adjusted_pool = deepcopy(state.pool)
     for card in state.get_deck():
         if card != UNKNOWN:
@@ -371,7 +312,7 @@ def actions(state):
                     else:
                         cs.append(c)
                 actions.append(f"FUTURE_{'_'.join([cards[c] for c in cs])}")
-            # print(len(actions))
+
             return actions
 
         elif state.cat_card:
@@ -379,6 +320,9 @@ def actions(state):
             candidates = State.add_cards(hand, adjusted_pool)
             candidates[UNKNOWN] = 0
             return [f"CAT_{cards[i]}" for i, c in enumerate(candidates) if c > 0]
+
+        elif state.replace_ek:
+            return [f'DEFUSE_{pos}' for pos in range(len(state.deck)+1)]
 
         else:
             card = state.get_deck()[-1]
@@ -392,14 +336,11 @@ def actions(state):
 
             
             return [f'DRAW_{cards[card]}' for card, count in enumerate(adjusted_pool) if count > 0]
-    
-    # elif state.to_move == 'CHANCE' and state.future:
         
 
     hand = deepcopy(state.get_current_hand())
     
     # This is to determine what actions the player could possibly take, given that their opponent may not know exactly what cards they have
-    # if state.to_move == 'MIN':
     for card, count in enumerate(adjusted_pool):
         if card != EK:
             hand[card] += min(count, hand[UNKNOWN])
@@ -412,20 +353,11 @@ def actions(state):
                 actions.append(f"FAVOR_{cards[card]}")
         return actions
 
-    # Player just used Defuse - put the EK back into deck
-    # if state.replace_ek:
-    #     return [f'REPLACE_{pos}' for pos in range(sum(state.deck))]
-
-    # Other player played Favor - must give a card to them
-    # if state.favor: # for cat cards
-    #     return [f'GIVE_{cards[card]}' for card, count in enumerate(hand) if count != 0]
-
     # Player drew EK - do they have Defuse?
-    # print(hand)
-    # print(len(state.deck) + 1)
     if hand[EK] == 1:
         if hand[DEFUSE] > 0 or (hand[UNKNOWN] > 0 and adjusted_pool[DEFUSE] > 0):
-            return [f'DEFUSE_{pos}' for pos in range(len(state.deck)+1)]
+            # return [f'DEFUSE_{pos}' for pos in range(len(state.deck)+1)]
+            return ['DEFUSE']
         else:
             return []
 
@@ -434,7 +366,6 @@ def actions(state):
     if len(state.deck) > 0:
         actions.append('DRAW')
     for card, count in enumerate(hand):
-        # print(card, cards[card], count)
         if card <= DEFUSE:
             # Defuse or EK - ignore
             continue
@@ -442,10 +373,6 @@ def actions(state):
             # Cat cards - need 2
             if count >= 2 and sum(state.get_current_hand(player=state.opposite_player())) > 0:
                 actions.append(cards[card])
-        # elif card == NOPE:
-        #     # Nope card - can only play if there was a previous 'action' card
-        #     if count >= 1 and state.active_played:
-        #         actions.append('NOPE')
         elif card == ATTACK:
             # no stacking attacks
             if count >= 1 and not state.attack:
@@ -513,17 +440,13 @@ def result(state, action):
         return result_state
 
     elif action.startswith('DEFUSE_'):
-        # print('DEFUSE')
         pos = int(action.split('_', 1)[1])
-        # print(pos)
-        # print(result_state.get_current_hand())
-        result_state.remove_from_hand(EK)
-        # print(result_state.get_current_hand())
-        # print(result_state.pool)
+
+        result_state.to_move = state.drawing
+        result_state.drawing = None
+        result_state.remove_from_hand(DEFUSE, player=result_state.opposite_player())
+        result_state.remove_from_hand(EK, player=result_state.opposite_player())
         result_state.pool[EK] += 1 # Put the EK back in the pool
-        # print(result_state)
-        # Put EK into deck randomly
-        # result_state.deck.insert(random.randrange(len(result_state.deck)+1), EK)
 
         # Put EK into deck at pos
         result_state.deck.insert(pos, EK)
@@ -532,16 +455,7 @@ def result(state, action):
         result_state.max_known_deck = []
         result_state.min_known_deck = []
 
-
-        # action = 'DEFUSE'
-        if state.get_current_hand()[DEFUSE] == 0:
-            result_state.remove_from_hand(UNKNOWN)
-            # If a player plays a card that they don't for sure have, it must get removed from the pool
-            result_state.pool[DEFUSE] -= 1
-        else:
-            result_state.remove_from_hand(DEFUSE)
-
-        result_state.to_move = state.opposite_player()
+        result_state.replace_ek = False
 
         return result_state
 
@@ -569,10 +483,9 @@ def result(state, action):
 
             if result_state.to_move == 'MAX':
                 result_state.max_known_deck.append(len(state.deck) - (i+1))
-                # result_state.max_known_deck[-(i + 1)] = fc
+
             if result_state.to_move == 'MIN':
                 result_state.min_known_deck.append(len(state.deck) - (i+1))
-                # result_state.min_known_deck[-(i + 1)] = fc
 
         return result_state
     
@@ -597,11 +510,15 @@ def result(state, action):
         result_state.drawing = state.to_move
         return result_state
 
+    if action == 'DEFUSE':
+        result_state.drawing = state.opposite_player()
+        result_state.to_move = 'CHANCE'
+        result_state.replace_ek = True
+
+        return result_state
     
 
-    # MIN might have played a card we didn't know they had
-    # if state.to_move == 'MIN' and state.min_hand[card] == 0:
-            # result_state.min_hand[UNKNOWN] -= 1
+    # Might have played a card we didn't know they had
     if state.get_current_hand()[card] == 0:
         result_state.remove_from_hand(UNKNOWN)
         # If a player plays a card that they don't for sure have, it must get removed from the pool
@@ -609,31 +526,16 @@ def result(state, action):
     else:
         result_state.remove_from_hand(card)
 
-    
         
-    # elif action.startswith('GIVE'):
-    #     card = Cards[action.split('_',1)[1]].value
-    #     result_state.remove_from_hand(card)
-    #     result_state.add_to_hand(state.opposite_player(), card)
-
-    #     result_state.to_move = state.opposite_player()
-    #     result_state.give = False
-
-    # non-stacking for now
     if action == 'ATTACK':
         result_state.to_move = state.opposite_player()
         result_state.attack = True
-        if state.turns == 1:
-            result_state.turns = 2
-        else:
-            result_state.turns += 2
 
     elif action == 'SKIP':
-        if not state.attack: # state.turns == 1:
+        if not state.attack:
             result_state.to_move = state.opposite_player()
         else:
             result_state.attack = False
-            result_state.turns -= 1
 
     elif action == 'SHUFFLE':
         if state.perspective == 'TRUTH':
@@ -670,19 +572,12 @@ def utility(state):
 def state_eval(state):
     score = 0
 
-    ek_prob = 1
-    if sum(state.pool) > 0:
-        ek_prob = state.pool[EK] / sum(state.pool)
-    
-    ek_weight = 6
-    if ek_prob > 0:
-        ek_weight = min(6, 1 / ek_prob)
 
     score += 2 * (state.max_hand[SKIP] - state.min_hand[SKIP])
     score += 4 * (state.max_hand[ATTACK] - state.min_hand[ATTACK])
-    score += (6 * ek_prob + 1) * (state.max_hand[DEFUSE] - state.min_hand[DEFUSE])
+    score += 8 * (state.max_hand[DEFUSE] - state.min_hand[DEFUSE])
     
-    score += (1 * ek_weight) * (state.max_hand[FUTURE] - state.min_hand[FUTURE])
+    score += 4 * (state.max_hand[FUTURE] - state.min_hand[FUTURE])
     score += 2 * (state.max_hand[SHUFFLE] - state.min_hand[SHUFFLE])
     score += 3 * (state.max_hand[FAVOR] - state.min_hand[FAVOR])
 
@@ -702,23 +597,10 @@ def expectimax(state, depth):
 
     ac = actions(state)
     scores = [expectimax(result(state, a), depth - 1) for a in ac]
-    if len(scores) == 0:
-        print(ac)
-        print(is_terminal(state))
-        state.print()
-        input()
-        
+
     if state.to_move == 'MAX':
         # In this case, probability means the chance that Min is *able* to take an action
-        # ac = actions(state)
         pr = probablity(state, ac)
-
-        # scores = [expectimax(result(state, a), depth - 1) for a in ac]
-        # if len(scores) == 0:
-        #     print(ac)
-        #     print(is_terminal(state))
-        #     state.print()
-        #     input()
         index_max = max(range(len(scores)), key=scores.__getitem__)
 
         # If the best move for Min has a probability of 100%, Min will always choose it
@@ -736,21 +618,13 @@ def expectimax(state, depth):
         # Calculate a weighted sum
         # Have to normalize probabilities since the sum may be > 100%
         total_p = sum(pr)
-        # if total_p == 0:
-        #     print(ac)
-        #     print(pr)
-        #     state.print()
-        #     input()
         return sum(p / total_p * s for p, s in zip(pr, scores))
 
         # return max(expectimax(result(state, a), depth - 1) for a in actions(state))
 
     if state.to_move == 'MIN':
         # In this case, probability means the chance that Min is *able* to take an action
-        # ac = actions(state)
         pr = probablity(state, ac)
-
-        # scores = [expectimax(result(state, a), depth - 1) for a in ac]
         index_min = min(range(len(scores)), key=scores.__getitem__)
 
         # If the best move for Min has a probability of 100%, Min will always choose it
@@ -768,14 +642,7 @@ def expectimax(state, depth):
         # Calculate a weighted sum
         # Have to normalize probabilities since the sum may be > 100%
         total_p = sum(pr)
-        # if total_p == 0:
-        #     print(ac)
-        #     print(pr)
-        #     state.print()
-        #     input()
         return sum(p / total_p * s for p, s in zip(pr, scores))
-        
-        # return min(expectimax(result(s, a), depth - 1) for a in actions(s))
 
 
     if state.to_move == 'CHANCE':
@@ -792,7 +659,7 @@ def choose_move(s):
         v = math.inf
 
     for action in actions(s):
-        val = expectimax(result(s, action), 3)
+        val = expectimax(result(s, action), 2)
         print(f"{action}: {val}")
         if (s.to_move == 'MAX' and val > v) or (s.to_move == 'MIN' and val < v):
             a, v = action, val
@@ -815,15 +682,14 @@ def main():
         else:
             if game_state.future:
                 action = f"FUTURE_{'_'.join([cards[c] for c in game_state.deck[-3:][::-1]])}"
-            elif game_state.cat_card:
+
+            elif game_state.cat_card or game_state.replace_ek:
                 ac = actions(game_state)
                 probabilities = probablity(game_state, ac)
                 action = random.choices(ac, weights=probabilities)[0]
+
             else:
                 # CHANCE - draw card
-                # draw_actions = actions(game_state)
-                # probabilities = probablity(game_state, draw_actions)
-                # action = random.choices(draw_actions, weights=probabilities)[0]
                 action = f"DRAW_{cards[game_state.deck[-1]]}"
 
         print(f"Chose action {action}")
