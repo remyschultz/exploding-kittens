@@ -652,30 +652,8 @@ def result(state, action):
         result_state.drawing = state.to_move
         result_state.to_move = 'CHANCE'
         result_state.future = True
-
-
-    
-
-
-    # elif action == 'FUTURE':
-    #     pass # make it chance's turn? then need to distinguish between drawing and seeing the future
-
-    # elif action[1:] == 'CAT':
-    #     result_state.remove_from_hand(Cards[action].value, 2)
-    #     if state.to_move == 'MAX':
-            # recieve random card from MIN
-
-    # elif action == 'NOPE':
-    #     if state.attack:
        
     return result_state
-
-
-#     if action.startswith('REPLACE'):
-#         result_state.replace_ek = False
-#         result_state.max_hand[Cards.EK.value] == 0
-#         result_state.ek_pos = int(action.split('_', 1)[1])
-#         result_state.to_move = Players.MIN
 
 
 def is_terminal(state):
@@ -684,21 +662,31 @@ def is_terminal(state):
 
 def utility(state):
     if state.max_hand[DEFUSE] == 0 and state.max_hand[EK] == 1:
-        return -10000
+        return -1000
     if state.min_hand[DEFUSE] == 0 and state.min_hand[EK] == 1:
-        return 10000
+        return 1000
     return 0 # should never occur
 
 def state_eval(state):
     score = 0
+
+    ek_prob = 1
+    if sum(state.pool) > 0:
+        ek_prob = state.pool[EK] / sum(state.pool)
     
-    # ek_prob = 1
-    # if sum(state.pool) > 0:
-    #     ek_prob = state.pool[EK] / sum(state.pool)
+    ek_weight = 6
+    if ek_prob > 0:
+        ek_weight = min(6, 1 / ek_prob)
 
     score += 2 * (state.max_hand[SKIP] - state.min_hand[SKIP])
     score += 4 * (state.max_hand[ATTACK] - state.min_hand[ATTACK])
-    score += 8 * (state.max_hand[DEFUSE] - state.min_hand[DEFUSE])
+    score += (6 * ek_prob + 1) * (state.max_hand[DEFUSE] - state.min_hand[DEFUSE])
+    
+    score += (1 * ek_weight) * (state.max_hand[FUTURE] - state.min_hand[FUTURE])
+    score += 2 * (state.max_hand[SHUFFLE] - state.min_hand[SHUFFLE])
+    score += 3 * (state.max_hand[FAVOR] - state.min_hand[FAVOR])
+
+    score += 1 * (sum(state.max_hand[BCAT:TCAT+1]) - sum(state.min_hand[BCAT:TCAT+1]))
 
     score += 3 * (state.max_hand[UNKNOWN] - state.min_hand[UNKNOWN])
 
