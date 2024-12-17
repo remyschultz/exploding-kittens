@@ -757,7 +757,7 @@ def play_game(agent1, agent2, print_info=False):
         'player_actions': len(p1_move_times + p2_move_times),
         'remaining_cards': len(game_state.deck),
         # 'actions': game_state.action_history,
-        'end_state': game_state
+        # 'end_state': game_state
     }
 
     if print_info:
