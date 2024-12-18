@@ -1,6 +1,7 @@
 import random, math, time
 from copy import deepcopy
 from itertools import permutations
+import sys
 
 UNKNOWN = 0
 DEFUSE = 1
@@ -26,7 +27,7 @@ start_hand_size = 8
 FULL_DECK = lambda: deepcopy(counts)
 
 class State:
-    def __init__(self, starting_hand=None, player='MAX'):
+    def __init__(self, player='MAX'):
         self.deal_cards()
 
         self.known_max = [start_hand_size - 1, 1] + ([0] * 12)
@@ -38,7 +39,7 @@ class State:
         self.attack = False
         self.future = False
         self.cat_card = False
-        self.favor = False # for cat cards
+        self.favor = False
         self.drawing = None
         self.replace_ek = False
 
@@ -718,13 +719,11 @@ def play_game(agent1, agent2, print_info=False):
         if game_state.to_move == 'MAX':
             t0 = time.time()
             action = agent1(game_state)
-            # action = choose_move(game_state.percept(), eval_fn=eval_fn1, depth=depth1, print_info=print_info)
             p1_move_times.append(time.time() - t0)
 
         elif game_state.to_move == 'MIN':
             t0 = time.time()
             action = agent2(game_state)
-            # action = choose_move(game_state.percept(), eval_fn=eval_fn2, depth=depth2, print_info=print_info)
             p2_move_times.append(time.time() - t0)
 
         else:
@@ -755,9 +754,7 @@ def play_game(agent1, agent2, print_info=False):
         'p2_time': p2_move_times,
         'total_actions': len(game_state.action_history),
         'player_actions': len(p1_move_times + p2_move_times),
-        'remaining_cards': len(game_state.deck),
-        # 'actions': game_state.action_history,
-        # 'end_state': game_state
+        'remaining_cards': len(game_state.deck)
     }
 
     if print_info:
@@ -771,9 +768,30 @@ def play_game(agent1, agent2, print_info=False):
 
 
 def main():
-    while True:
-        result = play_game(agent_depth1, agent_1second)
-        print(result)
+    agents = {
+        'agent_random': agent_random,
+        'agent_depth1': agent_depth1,
+        'agent_depth2': agent_depth2,
+        'agent_depth3': agent_depth3,
+        'agent_1second': agent_1second,
+        'agent_3seconds': agent_3seconds
+    }
+
+    if len(sys.argv) < 3:
+        print('Usage: python3 exploding_kittens.py <agent1> <agent2> [print_info]')
+        print('print_info: True or False')
+        print('Valid agents:')
+        for k in agents.keys(): print(f'\t{k}')
+        sys.exit(1)
+
+    agent1 = sys.argv[1]
+    agent2 = sys.argv[2]
+    print_info = False
+    if len(sys.argv) == 4:
+        print_info = True if sys.argv[3] == 'True' else False
+
+    results = play_game(agents[agent1], agents[agent2], print_info=print_info)
+    print(f"Winner: {agent1 if results['winner'] == 'P1' else agent2} ({results['winner']})")
 
 
 if __name__ == '__main__':
